@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Driver Time & Load Log</title>
+<style>
+  :root{
+    --bg:#fff; --fg:#000; --line:#000; --accent:#000; --gray:#666; --lightgray:#eee;
+  }
+  *{box-sizing:border-box;}
+  body{
+    font-family:-apple-system,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--fg); margin:0; padding:0;
+  }
+  header{
+    padding:12px 16px; border-bottom:2px solid #000; display:flex;
+    justify-content:space-between; align-items:center; position:sticky; top:0; background:#fff; z-index:5;
+  }
+  header h1{font-size:16px; margin:0;}
+  .warn{background:#ffefc2; border-bottom:1px solid #000; padding:8px 16px; font-size:12px; display:none;}
+  .tabs{display:flex; border-bottom:2px solid #000;}
+  .tab{flex:1; padding:10px; text-align:center; border-right:1px solid #000; cursor:pointer; font-size:13px; background:#f7f7f7;}
+  .tab:last-child{border-right:none;}
+  .tab.active{background:#000; color:#fff; font-weight:bold;}
+  .panel{display:none; padding:10px;}
+  .panel.active{display:block;}
+  table{width:100%; table-layout:fixed; border-collapse:collapse; font-size:11px; margin-bottom:14px;}
+  th,td{border:1px solid #000; padding:3px 2px; text-align:center; overflow:hidden;}
+  th{background:#000; color:#fff; font-size:10px; word-break:break-word;}
+  input, select{width:100%; min-width:0; border:none; text-align:center; font-size:11px; padding:2px; background:transparent; box-sizing:border-box;}
+  input:focus{outline:2px solid #000; background:#fffbdc;}
+  input.computed{background:#eee; color:#333; font-weight:bold;}
+  input[type="date"]{-webkit-appearance:none; appearance:none; font-size:10px; padding:2px 0;}
+  input[type="date"]::-webkit-calendar-picker-indicator{display:none; -webkit-appearance:none;}
+  input[type="date"]::-webkit-inner-spin-button{display:none;}
+  .num-col{width:22px; background:#eee; font-weight:bold;}
+  .scroll-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid #000; margin-bottom:14px;}
+  .scroll-wrap table{margin-bottom:0;}
+  #loadTable{table-layout:auto; width:auto; min-width:720px;}
+  #loadTable th, #loadTable td{white-space:nowrap;}
+  #loadTable input{width:auto; min-width:60px;}
+  #loadTable th:nth-child(1), #loadTable td:nth-child(1),
+  #loadTable th:nth-child(2), #loadTable td:nth-child(2){
+    position:sticky; background:#fff; z-index:2;
+  }
+  #loadTable th:nth-child(1), #loadTable td:nth-child(1){ left:0; width:30px; }
+  #loadTable th:nth-child(2), #loadTable td:nth-child(2){ left:30px; width:110px; border-right:2px solid #000; }
+  #loadTable th:nth-child(1), #loadTable th:nth-child(2){ background:#000; color:#fff; z-index:3; }
+  .section-title{font-weight:bold; margin:14px 0 4px; font-size:14px; border-bottom:1px solid #000; padding-bottom:2px;}
+  .addr-block{font-size:11px; padding:6px; border:1px solid #000; margin-bottom:10px; background:#f7f7f7;}
+  .btnbar{display:flex; gap:6px; flex-wrap:wrap; padding:8px 0;}
+  button{
+    padding:10px 12px; font-size:13px; border:2px solid #000; background:#fff; color:#000;
+    border-radius:6px; font-weight:bold;
+  }
+  button.primary{background:#000; color:#fff;}
+  button.mic{border-radius:50%; width:56px; height:56px; padding:0; font-size:22px;}
+  button.mic.listening{background:#c00; color:#fff; border-color:#c00;}
+  #voiceStatus{font-size:12px; color:var(--gray); padding:4px 0; min-height:16px;}
+  .checkbox-cell input[type=checkbox]{width:16px; height:16px;}
+  .totals-grid{display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px;}
+  .totals-grid div{border:1px solid #000; padding:6px;}
+  .totals-grid label{display:block; font-size:10px; color:var(--gray);}
+  .sig{border:1px solid #000; margin-top:10px; padding:6px;}
+  .sig input{border-bottom:1px solid #000;}
+  .small{font-size:10px; color:var(--gray);}
+  .weekpicker{display:flex; align-items:center; gap:8px; margin:8px 0; font-size:13px;}
+  .weekpicker input{border:1px solid #000; width:auto; flex:1;}
+
+@media print {
+  #sigModal { display: none !important; }
+  body * { visibility: hidden; }
+  #printReport, #printReport * { visibility: visible; }
+  #printReport { position: absolute; top: 0; left: 0; width: 100%; }
+  #printReport table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  #printReport th, #printReport td { border: 1px solid #000; padding: 3px 5px; font-size: 10px; text-align: left; }
+  #printReport h2 { font-size: 14px; margin: 10px 0 4px; }
+  #printReport h1 { font-size: 16px; margin: 0 0 4px; }
+  #printReport .meta { font-size: 11px; margin-bottom: 8px; }
+}
+#printReport { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Driver Time & Load Log</h1>
+  <div>
+    <button onclick="exportPDF()">Export PDF Report</button>
+  </div>
+</header>
+
+<div id="printReport"></div>
+<div class="warn" id="fileWarning">⚠ Mic won't work opened as a local file — Chrome blocks microphone access on file:// pages. Host this over HTTPS (or localhost) to enable voice input. Typing still works fine.</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="time">Time Record</div>
+  <div class="tab" data-tab="load">Load Record</div>
+  <div class="tab" data-tab="fuel">Odometer / Fuel</div>
+</div>
+
+<div class="btnbar" style="padding:8px 16px; align-items:center;">
+  <button class="mic" id="micBtn" onclick="toggleMic()">🎤</button>
+  <div style="flex:1;">
+    <div id="voiceStatus">Tap mic, then say e.g. "day 5 start 6am end 4pm"</div>
+  </div>
+</div>
+
+<!-- TIME RECORD -->
+<div class="panel active" id="panel-time">
+  <div class="addr-block">
+    <strong>Home Terminal Address (fixed):</strong><br>
+    FM 1788, Seminole, Texas 79360
+  </div>
+  <div class="section-title">Driver Time Record — Month Days 1–31</div>
+  <p class="small">Total Hours is calculated automatically from Start/End — no need to enter it.</p>
+  <table id="timeTable">
+    <colgroup>
+      <col style="width:6%"><col style="width:23%"><col style="width:15%">
+      <col style="width:15%"><col style="width:14%"><col style="width:14%"><col style="width:13%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th><th>Date</th><th>Start Time<br>(All Duty)</th><th>End Time<br>(All Duty)</th>
+        <th>Total<br>Hours<br>(auto)</th><th>Driving<br>Hours</th><th>Truck #</th>
+      </tr>
+    </thead>
+    <tbody id="timeBody"></tbody>
+  </table>
+</div>
+
+<!-- LOAD RECORD -->
+<div class="panel" id="panel-load">
+  <div class="section-title">Load Record — Rows 1–25</div>
+  <p class="small">Total Trip Miles is calculated automatically from Load Odom / Well Odom.</p>
+  <div class="scroll-wrap">
+  <table id="loadTable">
+    <colgroup>
+      <col style="width:30px"><col style="width:110px"><col style="width:90px"><col style="width:90px">
+      <col style="width:110px"><col style="width:80px"><col style="width:110px"><col style="width:80px">
+      <col style="width:80px"><col style="width:40px"><col style="width:40px"><col style="width:40px">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th><th>Date</th><th>Ticket #</th><th>Booking #</th><th>Load<br>Origin</th>
+        <th>Load<br>Odom</th><th>Well<br>Destination</th><th>Well<br>Odom</th>
+        <th>Total<br>Trip Mi<br>(auto)</th><th>TX</th><th>NM</th><th>OK</th>
+      </tr>
+    </thead>
+    <tbody id="loadBody"></tbody>
+  </table>
+  </div>
+  <p class="small">Swipe left/right to see all columns.</p>
+</div>
+
+<!-- FUEL / ODOMETER -->
+<div class="panel" id="panel-fuel">
+  <div class="weekpicker">
+    <label class="small">Week of:</label>
+    <input type="date" id="weekStart" onchange="saveAll()">
+  </div>
+
+  <div class="section-title">Daily Odometer</div>
+  <p class="small">Total is calculated automatically from Start/Stop odometer.</p>
+  <table id="odoTable">
+    <thead>
+      <tr><th>Day</th><th>Date</th><th>Start<br>Odom</th><th>Stop<br>Odom</th><th>Total<br>(auto)</th></tr>
+    </thead>
+    <tbody id="odoBody"></tbody>
+  </table>
+
+  <div class="section-title">Fuel Purchases (add rows as needed)</div>
+  <table id="fuelTable">
+    <thead>
+      <tr><th>Date</th><th>Fuel Center</th><th>Miles</th><th>Gallons</th><th>Cost</th><th></th></tr>
+    </thead>
+    <tbody id="fuelBody"></tbody>
+  </table>
+  <button onclick="addFuelRow()">+ Add Fuel Row</button>
+
+  <div class="section-title">Weekly Totals (all calculated automatically)</div>
+  <div class="totals-grid">
+    <div><label>Texas Miles (auto)</label><input id="totTX" class="computed" readonly tabindex="-1"></div>
+    <div><label>New Mexico Miles (auto)</label><input id="totNM" class="computed" readonly tabindex="-1"></div>
+    <div><label>Oklahoma Miles (auto)</label><input id="totOK" class="computed" readonly tabindex="-1"></div>
+    <div><label>Week Total Miles (auto)</label><input id="totMiles" class="computed" readonly tabindex="-1"></div>
+    <div><label>Week Total Gallons (auto)</label><input id="totGal" class="computed" readonly tabindex="-1"></div>
+    <div><label>Week Total Cost (auto)</label><input id="totCost" class="computed" readonly tabindex="-1"></div>
+    <div><label>Average MPG (auto)</label><input id="totMPG" class="computed" readonly tabindex="-1"></div>
+  </div>
+  <p class="small">State miles (TX/NM/OK) sum Load Record trip miles for rows checked in that state, matched to this week's date range if "Week of" is set — otherwise all matching rows are summed.</p>
+
+  <div class="section-title">Efficiency Dashboard</div>
+  <div id="dashboardArea"></div>
+
+  <div class="sig">
+    <label class="small">Signature (type name to certify, or draw below)</label>
+    <input id="sig" placeholder="Driver signature" oninput="onSigTyped()">
+    <div style="margin-top:8px;">
+      <button type="button" onclick="openSigPad()">Draw Signature</button>
+      <button type="button" onclick="clearDrawnSig()" id="clearSigBtn" style="display:none;">Clear Drawn Signature</button>
+    </div>
+    <div id="sigPreviewWrap" style="display:none; margin-top:6px;">
+      <img id="sigPreview" style="max-width:280px; border:1px solid #000; background:#fff;">
+    </div>
+  </div>
+
+  <div id="sigModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:#fff; padding:16px; border:2px solid #000; max-width:95vw;">
+      <p class="small" style="margin:0 0 8px;">Draw your signature below with your finger or mouse.</p>
+      <canvas id="sigCanvas" width="320" height="140" style="border:1px solid #000; touch-action:none; background:#fff;"></canvas>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button type="button" onclick="clearSigCanvas()">Clear</button>
+        <button type="button" onclick="saveSigCanvas()" class="primary">Save Signature</button>
+        <button type="button" onclick="closeSigPad()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="btnbar" style="padding:12px 16px;">
+  <button class="primary" onclick="exportJSON()">Download JSON Backup</button>
+  <button onclick="document.getElementById('importFile').click()">Import JSON</button>
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+  <button onclick="if(confirm('Clear ALL data?'))clearAll()">Clear All</button>
+</div>
+
+<script>
+const STORAGE_KEY = 'driverTimeLog_v1';
+const DEFAULT_TRUCK = '8056';
+let data = { time:[], load:[], odo:[], fuel:[], totals:{}, sig:'', weekStart:'' };
+let memoryStore = {};
+
+// Some file:// / downloaded-file contexts throw on localStorage access instead
+// of just being unavailable. Never let that crash the whole app — fall back
+// to in-memory storage (works for the session, just won't persist on reload).
+function safeGetItem(key){
+  try{ return localStorage.getItem(key); }
+  catch(e){ return Object.prototype.hasOwnProperty.call(memoryStore,key) ? memoryStore[key] : null; }
+}
+function safeSetItem(key,val){
+  try{ localStorage.setItem(key,val); }
+  catch(e){ memoryStore[key]=val; showErrorBanner('Storage is restricted here — changes will NOT be saved after you close this page. Try opening this file over a real web link instead of a downloaded file.'); }
+}
+function safeRemoveItem(key){
+  try{ localStorage.removeItem(key); }catch(e){ delete memoryStore[key]; }
+}
+function showErrorBanner(msg){
+  let b = document.getElementById('errBanner');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'errBanner';
+    b.style.cssText = 'background:#c00;color:#fff;padding:8px 16px;font-size:12px;position:fixed;bottom:0;left:0;right:0;z-index:999;';
+    document.body.appendChild(b);
+  }
+  b.textContent = msg;
+}
+window.onerror = function(msg, url, line){
+  showErrorBanner('App error: ' + msg + ' (line ' + line + ') — tell Claude this exact message.');
+};
+
+function blankTimeRow(i){ return {n:i, date:'', start:'', end:'', totalHrs:'', drivingHrs:'', truck:DEFAULT_TRUCK}; }
+function blankLoadRow(i){ return {n:i, date:'', ticket:'', booking:'', origin:'', loadOdo:'', dest:'', wellOdo:'', totalMi:'', tx:false, nm:false, ok:false}; }
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function blankOdoRow(day){ return {day:day, date:'', start:'', stop:'', total:''}; }
+function blankFuelRow(){ return {date:'', center:'', miles:'', gallons:'', cost:''}; }
+
+function initData(){
+  data.time = Array.from({length:31}, (_,i)=>blankTimeRow(i+1));
+  data.load = Array.from({length:25}, (_,i)=>blankLoadRow(i+1));
+  data.odo = DAYS.map(d=>blankOdoRow(d));
+  data.fuel = [blankFuelRow(),blankFuelRow(),blankFuelRow()];
+}
+
+function loadData(){
+  const raw = safeGetItem(STORAGE_KEY);
+  if(raw){
+    try{ data = JSON.parse(raw); }catch(e){ initData(); }
+  } else { initData(); }
+  if(!data.time || data.time.length!==31) initData();
+  data.load.forEach(r=>{ if(r.ok===undefined) r.ok=false; });
+}
+
+// ---- calculation helpers ----
+function parseTimeToMinutes(str){
+  if(!str) return null;
+  let s = String(str).trim().toLowerCase().replace(/\s+/g,'');
+  let ap = null;
+  const apMatch = s.match(/(am|pm)$/);
+  if(apMatch){ ap = apMatch[1]; s = s.slice(0, s.length-2); }
+  let hour, min;
+  if(s.includes(':')){
+    const parts = s.split(':');
+    if(parts.length!==2) return null;
+    hour = parseInt(parts[0],10);
+    min = parseInt(parts[1],10);
+  } else {
+    if(!/^\d+$/.test(s) || s.length===0) return null;
+    if(s.length<=2){ hour=parseInt(s,10); min=0; }
+    else if(s.length===3){ hour=parseInt(s.slice(0,1),10); min=parseInt(s.slice(1),10); }
+    else if(s.length===4){ hour=parseInt(s.slice(0,2),10); min=parseInt(s.slice(2),10); }
+    else return null;
+  }
+  if(isNaN(hour)||isNaN(min)||min>59) return null;
+  if(ap){
+    if(hour<1||hour>12) return null;
+    if(hour===12) hour = (ap==='am') ? 0 : 12;
+    else if(ap==='pm') hour += 12;
+  } else {
+    if(hour>23) return null;
+  }
+  return hour*60+min;
+}
+function minutesToDisplay(mins){
+  if(mins===null || mins===undefined) return null;
+  const h = Math.floor(mins/60), m = mins%60;
+  const ap = h>=12 ? 'PM' : 'AM';
+  let h12 = h%12; if(h12===0) h12=12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ap}`;
+}
+function normalizeTimeField(el){
+  const mins = parseTimeToMinutes(el.value);
+  if(mins!==null) el.value = minutesToDisplay(mins);
+  saveAll();
+}
+
+function normalizeSpokenTime(raw){
+  // Handles voice transcripts where numbers may come through as digits
+  // ("0500", "1700") OR as spoken words ("zero five hundred", "seventeen
+  // hundred", "five thirty") -> converts to the same clean "H:MM AM/PM"
+  // format used everywhere else, using the existing parser/formatter.
+  const WORD_NUMS = {
+    'zero':'0','oh':'0','one':'1','two':'2','three':'3','four':'4','five':'5',
+    'six':'6','seven':'7','eight':'8','nine':'9','ten':'10','eleven':'11','twelve':'12',
+    'thirteen':'13','fourteen':'14','fifteen':'15','sixteen':'16','seventeen':'17',
+    'eighteen':'18','nineteen':'19','twenty':'20','thirty':'30','forty':'40','fifty':'50'
+  };
+  let s = String(raw).trim().toLowerCase();
+  let ap = '';
+  const apMatch = s.match(/\s*([ap])\.?m\.?\s*$/);
+  if(apMatch){ ap = apMatch[1]; s = s.slice(0, apMatch.index); }
+
+  const words = s.trim().split(/\s+/).filter(Boolean);
+  if(words.length && words.every(w => WORD_NUMS[w]!==undefined || /^\d+$/.test(w) || w==='hundred')){
+    let hasHundred = words[words.length-1]==='hundred';
+    let core = hasHundred ? words.slice(0,-1) : words;
+    let mapped = core.map(w => WORD_NUMS[w]!==undefined ? WORD_NUMS[w] : w).join('');
+    if(/^\d+$/.test(mapped) && mapped.length){
+      s = hasHundred ? String(parseInt(mapped,10)) + '00' : mapped;
+    }
+  } else {
+    s = s.replace(/[^\d:]/g,'');
+  }
+
+  const mins = parseTimeToMinutes(s + (ap ? ap+'m' : ''));
+  if(mins!==null) return minutesToDisplay(mins);
+  return raw.trim();
+}
+function computeHoursDiff(startStr, endStr){
+  const s = parseTimeToMinutes(startStr), e = parseTimeToMinutes(endStr);
+  if(s===null || e===null) return '';
+  let diff = e - s;
+  if(diff < 0) diff += 1440;
+  return (diff/60).toFixed(2);
+}
+function computeNumDiff(aStr, bStr){
+  const a = parseFloat(aStr), b = parseFloat(bStr);
+  if(isNaN(a) || isNaN(b)) return '';
+  return (b-a).toFixed(1);
+}
+function sumField(arr, field){
+  let total=0, any=false;
+  arr.forEach(v=>{ const n=parseFloat(v[field]); if(!isNaN(n)){ total+=n; any=true; } });
+  return any ? total : null;
+}
+function parseDateFlexible(str){
+  if(!str) return null;
+  let d = new Date(str);
+  if(!isNaN(d.getTime())) return d;
+  const m = String(str).match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if(m){
+    let mm=parseInt(m[1],10)-1, dd=parseInt(m[2],10), yy=parseInt(m[3],10);
+    if(yy<100) yy+=2000;
+    const dt = new Date(yy,mm,dd);
+    if(!isNaN(dt.getTime())) return dt;
+  }
+  return null;
+}
+
+function saveAll(){
+  document.querySelectorAll('#timeBody tr').forEach((tr,i)=>{
+    const inputs = tr.querySelectorAll('input');
+    const totalHrs = computeHoursDiff(inputs[1].value, inputs[2].value);
+    inputs[3].value = totalHrs;
+    data.time[i] = {n:i+1, date:inputs[0].value, start:inputs[1].value, end:inputs[2].value, totalHrs, drivingHrs:inputs[4].value, truck:inputs[5].value};
+  });
+  document.querySelectorAll('#loadBody tr').forEach((tr,i)=>{
+    const inputs = tr.querySelectorAll('input');
+    const cbs = tr.querySelectorAll('input[type=checkbox]');
+    const totalMi = computeNumDiff(inputs[4].value, inputs[6].value);
+    inputs[7].value = totalMi;
+    data.load[i] = {n:i+1, date:inputs[0].value, ticket:inputs[1].value, booking:inputs[2].value, origin:inputs[3].value, loadOdo:inputs[4].value, dest:inputs[5].value, wellOdo:inputs[6].value, totalMi, tx:cbs[0].checked, nm:cbs[1].checked, ok:cbs[2].checked};
+  });
+  document.querySelectorAll('#odoBody tr').forEach((tr,i)=>{
+    const inputs = tr.querySelectorAll('input');
+    const total = computeNumDiff(inputs[1].value, inputs[2].value);
+    inputs[3].value = total;
+    data.odo[i] = {day:DAYS[i], date:inputs[0].value, start:inputs[1].value, stop:inputs[2].value, total};
+  });
+  data.fuel = [];
+  document.querySelectorAll('#fuelBody tr').forEach((tr)=>{
+    const inputs = tr.querySelectorAll('input');
+    data.fuel.push({date:inputs[0].value, center:inputs[1].value, miles:inputs[2].value, gallons:inputs[3].value, cost:inputs[4].value});
+  });
+  data.sig = val('sig');
+  data.weekStart = val('weekStart');
+  if(data.sigDrawing === undefined) data.sigDrawing = '';
+
+  recomputeWeeklyTotals();
+
+  document.getElementById('totTX').value = data.totals.tx;
+  document.getElementById('totNM').value = data.totals.nm;
+  document.getElementById('totOK').value = data.totals.ok;
+  document.getElementById('totMiles').value = data.totals.miles;
+  document.getElementById('totGal').value = data.totals.gal;
+  document.getElementById('totCost').value = data.totals.cost;
+  document.getElementById('totMPG').value = data.totals.mpg;
+
+  renderDashboard();
+
+  safeSetItem(STORAGE_KEY, JSON.stringify(data));
+}
+function val(id){ const el=document.getElementById(id); return el?el.value:''; }
+
+function recomputeWeeklyTotals(){
+  const weekMiles = sumField(data.odo, 'total');
+  const weekGal = sumField(data.fuel, 'gallons');
+  const weekCost = sumField(data.fuel, 'cost');
+  data.totals = data.totals || {};
+  data.totals.miles = weekMiles!==null ? weekMiles.toFixed(1) : '';
+  data.totals.gal = weekGal!==null ? weekGal.toFixed(2) : '';
+  data.totals.cost = weekCost!==null ? weekCost.toFixed(2) : '';
+  data.totals.mpg = (weekMiles && weekGal) ? (weekMiles/weekGal).toFixed(2) : '';
+
+  const wkStart = parseDateFlexible(data.weekStart);
+  const wkEnd = wkStart ? new Date(wkStart.getTime()+6*86400000) : null;
+  let tx=0, nm=0, ok=0, any=false;
+  data.load.forEach(row=>{
+    const mi = parseFloat(row.totalMi);
+    if(isNaN(mi)) return;
+    if(wkStart){
+      const d = parseDateFlexible(row.date);
+      if(!d || d<wkStart || d>wkEnd) return;
+    }
+    if(row.tx){ tx+=mi; any=true; }
+    if(row.nm){ nm+=mi; any=true; }
+    if(row.ok){ ok+=mi; any=true; }
+  });
+  data.totals.tx = any ? tx.toFixed(1) : '';
+  data.totals.nm = any ? nm.toFixed(1) : '';
+  data.totals.ok = any ? ok.toFixed(1) : '';
+}
+
+function detectStateKeys(){
+  // Any boolean field on a load row other than the known non-state fields is
+  // treated as a state checkbox. This way newly added state columns (beyond
+  // the original TX/NM/OK) are picked up automatically without code changes.
+  const skip = ['n','date','ticket','booking','origin','loadOdo','dest','wellOdo','totalMi'];
+  const keys = new Set();
+  data.load.forEach(row=>{
+    Object.keys(row).forEach(k=>{
+      if(!skip.includes(k) && typeof row[k]==='boolean') keys.add(k);
+    });
+  });
+  return Array.from(keys);
+}
+
+function stateLabel(key){
+  const known = {tx:'TX', nm:'NM', ok:'OK'};
+  if(known[key]) return known[key];
+  return key.toUpperCase();
+}
+
+function milesByState(){
+  const keys = detectStateKeys();
+  const totals = {};
+  keys.forEach(k=> totals[k]=0);
+  data.load.forEach(row=>{
+    const mi = parseFloat(row.totalMi);
+    if(isNaN(mi)) return;
+    keys.forEach(k=>{ if(row[k]) totals[k]+=mi; });
+  });
+  return totals; // {tx: 123.4, nm: 0, ok: 0, ...}
+}
+
+function mpgForRange(startDate, endDate){
+  // Sums odometer daily totals (miles) and fuel gallons whose dates fall within
+  // [startDate, endDate] inclusive. Returns {miles, gallons, mpg} or null if no
+  // qualifying data exists in that range (so callers can skip the comparison).
+  let miles = 0, milesAny = false;
+  data.odo.forEach(row=>{
+    const d = parseDateFlexible(row.date);
+    if(!d || d<startDate || d>endDate) return;
+    const t = parseFloat(row.total);
+    if(!isNaN(t)){ miles += t; milesAny = true; }
+  });
+  let gallons = 0, gallonsAny = false;
+  (data.fuel||[]).forEach(row=>{
+    const d = parseDateFlexible(row.date);
+    if(!d || d<startDate || d>endDate) return;
+    const g = parseFloat(row.gallons);
+    if(!isNaN(g)){ gallons += g; gallonsAny = true; }
+  });
+  if(!milesAny || !gallonsAny || gallons===0) return null;
+  return { miles, gallons, mpg: miles/gallons };
+}
+
+function startOfDay(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function startOfWeek(d){ const s=startOfDay(d); const day=s.getDay(); s.setDate(s.getDate()-day); return s; }
+function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+
+function computeDashboard(){
+  const today = startOfDay(new Date());
+  const yesterday = new Date(today.getTime()-86400000);
+
+  const allTimeMiles = sumField(data.odo, 'total');
+  const allTimeGal = sumField(data.fuel, 'gallons');
+  const allTimeMPG = (allTimeMiles && allTimeGal) ? (allTimeMiles/allTimeGal) : null;
+
+  const todayRange = mpgForRange(today, today);
+  const yesterdayRange = mpgForRange(yesterday, yesterday);
+
+  const thisWeekStart = startOfWeek(today);
+  const thisWeekRange = mpgForRange(thisWeekStart, today);
+  const lastWeekStart = new Date(thisWeekStart.getTime()-7*86400000);
+  const lastWeekEnd = new Date(thisWeekStart.getTime()-1*86400000);
+  const lastWeekRange = mpgForRange(lastWeekStart, lastWeekEnd);
+
+  const thisMonthStart = startOfMonth(today);
+  const thisMonthRange = mpgForRange(thisMonthStart, today);
+  const lastMonthEnd = new Date(thisMonthStart.getTime()-86400000);
+  const lastMonthStart = startOfMonth(lastMonthEnd);
+  const lastMonthRange = mpgForRange(lastMonthStart, lastMonthEnd);
+
+  const comparisons = [];
+  if(todayRange && yesterdayRange){
+    comparisons.push({ label:'vs yesterday', current: todayRange.mpg, prior: yesterdayRange.mpg });
+  }
+  if(thisWeekRange && lastWeekRange){
+    comparisons.push({ label:'vs last week', current: thisWeekRange.mpg, prior: lastWeekRange.mpg });
+  }
+  if(thisMonthRange && lastMonthRange){
+    comparisons.push({ label:'vs last month', current: thisMonthRange.mpg, prior: lastMonthRange.mpg });
+  }
+
+  const stateTotals = milesByState();
+  const stateBars = Object.keys(stateTotals)
+    .map(k=>({ key:k, label: stateLabel(k), miles: stateTotals[k] }))
+    .filter(s=> s.miles > 0);
+  const stateZero = Object.keys(stateTotals)
+    .map(k=>({ key:k, label: stateLabel(k), miles: stateTotals[k] }))
+    .filter(s=> s.miles === 0);
+
+  return {
+    allTimeMiles, allTimeGal, allTimeMPG,
+    comparisons,
+    stateBars, stateZero
+  };
+}
+
+function renderDashboardHTML(dash, forPrint){
+  const esc2 = (v)=> (v===undefined||v===null) ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let html = '';
+
+  if(dash.allTimeMPG){
+    html += `<p><strong>Running MPG (all-time):</strong> ${dash.allTimeMPG.toFixed(2)} (${dash.allTimeMiles.toFixed(1)} miles / ${dash.allTimeGal.toFixed(2)} gallons)</p>`;
+  } else {
+    html += `<p class="small">Not enough data yet for a running MPG — needs at least one dated odometer entry and one dated fuel entry.</p>`;
+  }
+
+  if(dash.comparisons.length){
+    html += '<ul style="margin:6px 0 10px 20px; padding:0;">';
+    dash.comparisons.forEach(c=>{
+      const diff = c.current - c.prior;
+      const pct = c.prior ? (diff/c.prior*100) : 0;
+      const dir = diff>0 ? 'better' : (diff<0 ? 'worse' : 'even');
+      html += `<li>${esc2(c.label)}: ${c.current.toFixed(2)} MPG vs ${c.prior.toFixed(2)} MPG (${dir}, ${diff>=0?'+':''}${pct.toFixed(1)} percent)</li>`;
+    });
+    html += '</ul>';
+  } else {
+    html += `<p class="small">No prior-period data yet to compare against.</p>`;
+  }
+
+  if(dash.stateBars.length){
+    const maxMiles = Math.max(...dash.stateBars.map(s=>s.miles));
+    html += '<div style="margin-top:8px;">';
+    dash.stateBars.forEach(s=>{
+      const pct = maxMiles>0 ? (s.miles/maxMiles*100) : 0;
+      html += `<div style="display:flex; align-items:center; margin-bottom:4px;">
+        <div style="width:40px; font-size:12px;">${esc2(s.label)}</div>
+        <div style="flex:1; background:#eee; border:1px solid #000; height:16px; position:relative;">
+          <div style="width:${pct}%; background:#000; height:100%;"></div>
+        </div>
+        <div style="width:70px; text-align:right; font-size:12px;">${s.miles.toFixed(1)} mi</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  if(dash.stateZero.length){
+    const zeroNames = dash.stateZero.map(s=>s.label).join(', ');
+    html += `<p class="small">No data yet for: ${esc2(zeroNames)}.</p>`;
+  }
+
+  return html;
+}
+
+function renderDashboard(){
+  const dash = computeDashboard();
+  const area = document.getElementById('dashboardArea');
+  if(area) area.innerHTML = renderDashboardHTML(dash, false);
+  return dash;
+}
+
+let sigTypedNoticeShown = false;
+function onSigTyped(){
+  if(!sigTypedNoticeShown){
+    sigTypedNoticeShown = true;
+    alert('By typing your name here, you are providing a legally acceptable electronic signature for this record.');
+  }
+  saveAll();
+}
+
+let sigCanvasCtx = null;
+let sigDrawing = false;
+let sigLastPoint = null;
+
+function openSigPad(){
+  const modal = document.getElementById('sigModal');
+  modal.style.display = 'flex';
+  const canvas = document.getElementById('sigCanvas');
+  sigCanvasCtx = canvas.getContext('2d');
+  sigCanvasCtx.clearRect(0,0,canvas.width,canvas.height);
+  sigCanvasCtx.fillStyle = '#fff';
+  sigCanvasCtx.fillRect(0,0,canvas.width,canvas.height);
+  sigCanvasCtx.strokeStyle = '#000';
+  sigCanvasCtx.lineWidth = 2;
+  sigCanvasCtx.lineCap = 'round';
+
+  if(!canvas.dataset.wired){
+    canvas.dataset.wired = '1';
+    const getPos = (e)=>{
+      const rect = canvas.getBoundingClientRect();
+      const src = e.touches ? e.touches[0] : e;
+      return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+    };
+    const start = (e)=>{ e.preventDefault(); sigDrawing = true; sigLastPoint = getPos(e); };
+    const move = (e)=>{
+      if(!sigDrawing) return;
+      e.preventDefault();
+      const p = getPos(e);
+      sigCanvasCtx.beginPath();
+      sigCanvasCtx.moveTo(sigLastPoint.x, sigLastPoint.y);
+      sigCanvasCtx.lineTo(p.x, p.y);
+      sigCanvasCtx.stroke();
+      sigLastPoint = p;
+    };
+    const end = (e)=>{ sigDrawing = false; };
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+    canvas.addEventListener('touchstart', start, {passive:false});
+    canvas.addEventListener('touchmove', move, {passive:false});
+    canvas.addEventListener('touchend', end);
+  }
+}
+
+function closeSigPad(){
+  document.getElementById('sigModal').style.display = 'none';
+}
+
+function clearSigCanvas(){
+  const canvas = document.getElementById('sigCanvas');
+  sigCanvasCtx.fillStyle = '#fff';
+  sigCanvasCtx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function saveSigCanvas(){
+  const canvas = document.getElementById('sigCanvas');
+  data.sigDrawing = canvas.toDataURL('image/png');
+  saveAll();
+  renderSigPreview();
+  closeSigPad();
+}
+
+function clearDrawnSig(){
+  data.sigDrawing = '';
+  saveAll();
+  renderSigPreview();
+}
+
+function renderSigPreview(){
+  const wrap = document.getElementById('sigPreviewWrap');
+  const img = document.getElementById('sigPreview');
+  const clearBtn = document.getElementById('clearSigBtn');
+  if(data.sigDrawing){
+    wrap.style.display = 'block';
+    img.src = data.sigDrawing;
+    clearBtn.style.display = 'inline-block';
+  } else {
+    wrap.style.display = 'none';
+    img.src = '';
+    clearBtn.style.display = 'none';
+  }
+}
+
+function render(){
+  const tb = document.getElementById('timeBody'); tb.innerHTML='';
+  data.time.forEach((row,i)=>{
+    tb.innerHTML += `<tr>
+      <td class="num-col">${row.n}</td>
+      <td><input type="date" value="${esc(row.date)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.start)}" oninput="saveAll()" onchange="normalizeTimeField(this)" placeholder="e.g. 6am or 1800"></td>
+      <td><input value="${esc(row.end)}" oninput="saveAll()" onchange="normalizeTimeField(this)" placeholder="e.g. 4pm or 1600"></td>
+      <td><input class="computed" value="${esc(row.totalHrs)}" readonly tabindex="-1"></td>
+      <td><input value="${esc(row.drivingHrs)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.truck||DEFAULT_TRUCK)}" onchange="saveAll()"></td>
+    </tr>`;
+  });
+
+  const lb = document.getElementById('loadBody'); lb.innerHTML='';
+  data.load.forEach((row,i)=>{
+    lb.innerHTML += `<tr>
+      <td class="num-col">${row.n}</td>
+      <td><input type="date" value="${esc(row.date)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.ticket)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.booking)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.origin)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.loadOdo)}" oninput="saveAll()" onchange="saveAll()"></td>
+      <td><input value="${esc(row.dest)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.wellOdo)}" oninput="saveAll()" onchange="saveAll()"></td>
+      <td><input class="computed" value="${esc(row.totalMi)}" readonly tabindex="-1"></td>
+      <td class="checkbox-cell"><input type="checkbox" ${row.tx?'checked':''} onchange="saveAll()"></td>
+      <td class="checkbox-cell"><input type="checkbox" ${row.nm?'checked':''} onchange="saveAll()"></td>
+      <td class="checkbox-cell"><input type="checkbox" ${row.ok?'checked':''} onchange="saveAll()"></td>
+    </tr>`;
+  });
+
+  const ob = document.getElementById('odoBody'); ob.innerHTML='';
+  data.odo.forEach((row)=>{
+    ob.innerHTML += `<tr>
+      <td>${row.day}</td>
+      <td><input type="date" value="${esc(row.date)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.start)}" oninput="saveAll()" onchange="saveAll()"></td>
+      <td><input value="${esc(row.stop)}" oninput="saveAll()" onchange="saveAll()"></td>
+      <td><input class="computed" value="${esc(row.total)}" readonly tabindex="-1"></td>
+    </tr>`;
+  });
+
+  renderFuel();
+  recomputeWeeklyTotals();
+  renderDashboard();
+
+  document.getElementById('totTX').value = data.totals?.tx||'';
+  document.getElementById('totNM').value = data.totals?.nm||'';
+  document.getElementById('totOK').value = data.totals?.ok||'';
+  document.getElementById('totMiles').value = data.totals?.miles||'';
+  document.getElementById('totGal').value = data.totals?.gal||'';
+  document.getElementById('totCost').value = data.totals?.cost||'';
+  document.getElementById('totMPG').value = data.totals?.mpg||'';
+  document.getElementById('sig').value = data.sig||'';
+  document.getElementById('weekStart').value = data.weekStart||'';
+  renderSigPreview();
+}
+
+function renderFuel(){
+  const fb = document.getElementById('fuelBody'); fb.innerHTML='';
+  data.fuel.forEach((row,i)=>{
+    fb.innerHTML += `<tr>
+      <td><input type="date" value="${esc(row.date)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.center)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.miles)}" onchange="saveAll()"></td>
+      <td><input value="${esc(row.gallons)}" oninput="saveAll()" onchange="saveAll()"></td>
+      <td><input value="${esc(row.cost)}" oninput="saveAll()" onchange="saveAll()"></td>
+      <td><button onclick="removeFuelRow(${i})" style="padding:4px 8px;">✕</button></td>
+    </tr>`;
+  });
+}
+function addFuelRow(){ saveAll(); data.fuel.push(blankFuelRow()); renderFuel(); saveAll(); }
+function removeFuelRow(i){ saveAll(); data.fuel.splice(i,1); renderFuel(); saveAll(); }
+
+function esc(s){ return (s===undefined||s===null)?'':String(s).replace(/"/g,'&quot;'); }
+
+// TABS
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.onclick = ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-'+tab.dataset.tab).classList.add('active');
+  };
+});
+
+// EXPORT / IMPORT
+function rowHasData(row, skipKeys){
+  return Object.keys(row).some(k => {
+    if(skipKeys && skipKeys.includes(k)) return false;
+    const v = row[k];
+    if(typeof v === 'boolean') return v === true;
+    return v !== '' && v !== null && v !== undefined;
+  });
+}
+
+function exportPDF(){
+  saveAll();
+  const esc2 = (v)=> (v===undefined||v===null) ? '' : String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const stamp = new Date().toLocaleDateString();
+
+  // Time Record: only rows with something entered besides the row number / default truck
+  const timeRows = data.time.filter(r => rowHasData(r, ['n','truck']));
+  let timeHtml = '';
+  if(timeRows.length){
+    timeHtml = `<h2>Driver Time Record</h2>
+      <table><tr><th>Day</th><th>Date</th><th>Start</th><th>End</th><th>Total Hrs</th><th>Driving Hrs</th><th>Truck #</th></tr>
+      ${timeRows.map(r=>`<tr><td>${r.n}</td><td>${esc2(r.date)}</td><td>${esc2(r.start)}</td><td>${esc2(r.end)}</td><td>${esc2(r.totalHrs)}</td><td>${esc2(r.drivingHrs)}</td><td>${esc2(r.truck)}</td></tr>`).join('')}
+      </table>`;
+  }
+
+  // Load Record: only rows with something entered besides the row number
+  const loadRows = data.load.filter(r => rowHasData(r, ['n']));
+  let loadHtml = '';
+  if(loadRows.length){
+    loadHtml = `<h2>Load Record</h2>
+      <table><tr><th>#</th><th>Date</th><th>Ticket</th><th>Booking</th><th>Origin</th><th>Load Odo</th><th>Destination</th><th>Well Odo</th><th>Total Mi</th><th>TX</th><th>NM</th><th>OK</th></tr>
+      ${loadRows.map(r=>`<tr><td>${r.n}</td><td>${esc2(r.date)}</td><td>${esc2(r.ticket)}</td><td>${esc2(r.booking)}</td><td>${esc2(r.origin)}</td><td>${esc2(r.loadOdo)}</td><td>${esc2(r.dest)}</td><td>${esc2(r.wellOdo)}</td><td>${esc2(r.totalMi)}</td><td>${r.tx?'X':''}</td><td>${r.nm?'X':''}</td><td>${r.ok?'X':''}</td></tr>`).join('')}
+      </table>`;
+  }
+
+  // Odometer / Fuel: only rows with something entered besides the day label
+  const odoRows = data.odo.filter(r => rowHasData(r, ['day']));
+  let odoHtml = '';
+  if(odoRows.length){
+    odoHtml = `<h2>Weekly Odometer</h2>
+      <table><tr><th>Day</th><th>Date</th><th>Start Odo</th><th>Stop Odo</th><th>Total</th></tr>
+      ${odoRows.map(r=>`<tr><td>${esc2(r.day)}</td><td>${esc2(r.date)}</td><td>${esc2(r.start)}</td><td>${esc2(r.stop)}</td><td>${esc2(r.total)}</td></tr>`).join('')}
+      </table>`;
+  }
+
+  const fuelRows = (data.fuel||[]).filter(r => rowHasData(r, []));
+  let fuelHtml = '';
+  if(fuelRows.length){
+    fuelHtml = `<h2>Fuel</h2>
+      <table><tr><th>Date</th><th>Center</th><th>Miles</th><th>Gallons</th><th>Cost</th></tr>
+      ${fuelRows.map(r=>`<tr><td>${esc2(r.date)}</td><td>${esc2(r.center)}</td><td>${esc2(r.miles)}</td><td>${esc2(r.gallons)}</td><td>${esc2(r.cost)}</td></tr>`).join('')}
+      </table>`;
+  }
+
+  const totalsLine = `<p class="meta">Week Totals — TX: ${esc2(data.totals?.tx)}  NM: ${esc2(data.totals?.nm)}  OK: ${esc2(data.totals?.ok)}  Miles: ${esc2(data.totals?.miles)}  Gallons: ${esc2(data.totals?.gal)}  Cost: ${esc2(data.totals?.cost)}  Avg MPG: ${esc2(data.totals?.mpg)}</p>`;
+
+  let sigLine = '';
+  if(data.sigDrawing){
+    sigLine += `<p class="meta">Signature:</p><img src="${data.sigDrawing}" style="max-width:280px; border:1px solid #000;">`;
+  }
+  if(data.sig){
+    sigLine += `<p class="meta">Signed (typed, electronic signature): ${esc2(data.sig)}</p>`;
+  }
+
+  const dash = computeDashboard();
+  const dashboardHtml = `<h2>Appendix: Efficiency Dashboard</h2>${renderDashboardHTML(dash, true)}`;
+
+  const reportHtml = `
+    <h1>Driver Time &amp; Load Log</h1>
+    <p class="meta">Home Terminal: FM 1788, Seminole, Texas 79360 &nbsp;|&nbsp; Printed: ${stamp}</p>
+    ${timeHtml}
+    ${loadHtml}
+    ${odoHtml}
+    ${fuelHtml}
+    ${totalsLine}
+    ${sigLine}
+    <div style="page-break-before: always;"></div>
+    ${dashboardHtml}
+  `;
+
+  const container = document.getElementById('printReport');
+  container.innerHTML = reportHtml;
+
+  if(!timeRows.length && !loadRows.length && !odoRows.length && !fuelRows.length){
+    alert('No data entered yet — nothing to export.');
+    return;
+  }
+
+  window.print();
+}
+
+function exportJSON(){
+  saveAll();
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url; a.download = `driver-time-log-${stamp}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function importJSON(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const imported = JSON.parse(reader.result);
+      data = imported;
+      if(!data.load) data.load=[];
+      data.load.forEach(r=>{ if(r.ok===undefined) r.ok=false; });
+      render();
+      saveAll();
+      alert('Import successful.');
+    }catch(err){ alert('Invalid JSON file.'); }
+  };
+  reader.readAsText(file);
+}
+function clearAll(){ safeRemoveItem(STORAGE_KEY); initData(); render(); saveAll(); }
+
+// VOICE — smart parse a sentence into fields
+let recognition = null, listening = false;
+function setupSpeech(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ document.getElementById('voiceStatus').textContent = 'Voice input not supported in this browser.'; return; }
+  if(location.protocol === 'file:'){
+    document.getElementById('fileWarning').style.display = 'block';
+  }
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = 'en-US';
+  recognition.onresult = (e)=>{
+    const text = e.results[0][0].transcript;
+    document.getElementById('voiceStatus').textContent = 'Heard: "'+text+'"';
+    parseVoice(text);
+  };
+  recognition.onerror = (e)=>{ document.getElementById('voiceStatus').textContent = 'Mic error: '+e.error; stopMic(); };
+  recognition.onend = ()=>{ stopMic(); };
+}
+function toggleMic(){
+  if(!recognition) setupSpeech();
+  if(!recognition) return;
+  if(listening){ recognition.stop(); stopMic(); }
+  else { recognition.start(); listening=true; document.getElementById('micBtn').classList.add('listening'); document.getElementById('voiceStatus').textContent='Listening...'; }
+}
+function stopMic(){ listening=false; document.getElementById('micBtn').classList.remove('listening'); }
+
+function parseVoice(text){
+  const t = text.toLowerCase();
+  const activeTab = document.querySelector('.tab.active').dataset.tab;
+
+  let dayMatch = t.match(/(?:day|row|number|#)\s*(\d{1,2})/) || t.match(/^(\d{1,2})\b/);
+  let idx = dayMatch ? parseInt(dayMatch[1],10)-1 : null;
+
+  if(activeTab === 'time'){
+    if(idx===null || idx<0 || idx>=31){ flash('Say a day number 1-31 to target a row.'); return; }
+    const row = data.time[idx];
+    let dateM = t.match(/date\s+([a-z0-9\/\-]+)/);
+    // Capture everything between "start...(time|at)" and the next keyword
+    // (end/driving/and-ended) or end of sentence; normalizeSpokenTime()
+    // interprets whatever's inside, whether digits or spoken number words.
+    let startM = t.match(/start(?:ed)?\s*(?:time|at)?\s+(.+?)(?=\s+and\s+end|\s+ended?\b|\s+end\b|\s+driving\b|$)/);
+    let endM = t.match(/end(?:ed)?\s*(?:time|at)?\s+(.+?)(?=\s+driving\b|$)/);
+    let drivingM = t.match(/driving\s*(?:hours)?\s+([\d.]+)/);
+    if(dateM) row.date = dateM[1];
+    if(startM) row.start = normalizeSpokenTime(startM[1]);
+    if(endM) row.end = normalizeSpokenTime(endM[1]);
+    if(drivingM) row.drivingHrs = drivingM[1];
+    render(); saveAll();
+    flash(`Row ${row.n} updated (total hours auto-calculated).`);
+  } else if(activeTab === 'load'){
+    if(idx===null || idx<0 || idx>=25){ flash('Say a row number 1-25 to target a row.'); return; }
+    const row = data.load[idx];
+    let ticketM = t.match(/ticket\s*(?:number)?\s+([\w-]+)/);
+    let bookingM = t.match(/booking\s*(?:number)?\s+([\w-]+)/);
+    let originM = t.match(/origin\s+([a-z0-9 ]+?)(?= destination| odometer| miles|$)/);
+    let destM = t.match(/destination\s+([a-z0-9 ]+?)(?= odometer| miles|$)/);
+    let loadOdoM = t.match(/load odom(?:eter)?\s+(\d+(\.\d+)?)/);
+    let wellOdoM = t.match(/well odom(?:eter)?\s+(\d+(\.\d+)?)/);
+    if(ticketM) row.ticket = ticketM[1];
+    if(bookingM) row.booking = bookingM[1];
+    if(originM) row.origin = originM[1].trim();
+    if(destM) row.dest = destM[1].trim();
+    if(loadOdoM) row.loadOdo = loadOdoM[1];
+    if(wellOdoM) row.wellOdo = wellOdoM[1];
+    if(t.includes('texas')) row.tx = true;
+    if(t.includes('new mexico')) row.nm = true;
+    if(t.includes('oklahoma')) row.ok = true;
+    render(); saveAll();
+    flash(`Load row ${row.n} updated (trip miles auto-calculated).`);
+  } else if(activeTab === 'fuel'){
+    const costM = t.match(/(\d+(\.\d+)?)\s*dollars?/);
+    const galM = t.match(/(\d+(\.\d+)?)\s*gallons?/);
+    let centerM = t.match(/(?:at|center)\s+([a-z0-9 ]+?)(?= \d|$)/);
+    const row = blankFuelRow();
+    if(costM) row.cost = costM[1];
+    if(galM) row.gallons = galM[1];
+    if(centerM) row.center = centerM[1].trim();
+    else {
+      let remainder = t.replace(/fuel stop|dollars?|gallons?|\d+(\.\d+)?/g,'').trim();
+      if(remainder) row.center = remainder;
+    }
+    data.fuel.push(row);
+    renderFuel(); saveAll();
+    flash('Fuel entry added: '+(row.center||'(no name)')+' $'+(row.cost||'?'));
+  }
+}
+function flash(msg){ document.getElementById('voiceStatus').textContent = msg; }
+
+// INIT
+loadData();
+render();
+setupSpeech();
+</script>
+</body>
+</html>
